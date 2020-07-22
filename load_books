@@ -1,9 +1,23 @@
+import os
 import requests
 
-filename = 'Пески Марса.txt'
-url = 'http://tululu.org/txt.php'
-response = requests.get(url, params={'id': '32168'})
-response.raise_for_status()
+BOOKS_PATH = 'books'
 
-with open(filename, 'w') as file:
-    file.write(response.text)
+
+def save_book(url, book_id):
+    filename = f'{BOOKS_PATH}/id{book_id}.txt'
+
+    response = requests.get(url, params={'id': book_id})
+    response.raise_for_status()
+
+    if url not in response.url:
+        return
+
+    os.makedirs(BOOKS_PATH, exist_ok=True)
+    with open(filename, 'w') as file:
+        file.write(response.text)
+
+
+url = 'http://tululu.org/txt.php'
+for book_id in range(1, 11):
+    save_book(url, book_id)
