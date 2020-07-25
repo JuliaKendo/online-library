@@ -1,23 +1,53 @@
 import os
+import re
 import requests
+from bs4 import BeautifulSoup
+from pathvalidate import sanitize_filename
 
-BOOKS_PATH = 'books'
+
+def get_book_title(url, book_id):
+    book_url = f'{url}/b{book_id}/'
+    response = requests.get(book_url)
+    response.raise_for_status()
+    assert book_url == response.url, 'Отсутствует книга на сайте'
+    soup = BeautifulSoup(response.text, 'lxml')
+    title_tag = soup.find('div', id='content').find('h1')
+    if title_tag:
+        book_name, book_author = re.findall(r'^(.*?)\s::(.*)', title_tag.text)[0]
+        return {
+            'name': book_name.strip(),
+            'author': book_author.strip()
+        }
 
 
-def save_book(url, book_id):
-    filename = f'{BOOKS_PATH}/id{book_id}.txt'
+def get_filename(url, book_id):
+    book_title = get_book_title(url, book_id)
+    filename = '%s.%s.txt' % (book_id, book_title['name'])
+    return sanitize_filename(filename)
 
-    response = requests.get(url, params={'id': book_id})
+
+def download_txt(url, filename, book_id, folder='books/'):
+    response = requests.get(f'{url}/txt.php', params={'id': book_id})
     response.raise_for_status()
 
-    if url not in response.url:
-        return
-
-    os.makedirs(BOOKS_PATH, exist_ok=True)
+    os.makedirs(folder, exist_ok=True)
+    filename = os.path.join(folder, filename)
     with open(filename, 'w') as file:
         file.write(response.text)
 
+    return filename
 
-url = 'http://tululu.org/txt.php'
-for book_id in range(1, 11):
-    save_book(url, book_id)
+
+def main():
+    url = 'http://tululu.org'
+    for book_id in range(1, 11):
+        try:
+            filename = get_filename(url, book_id)
+            filepath = download_txt(url, filename, book_id)
+            print(filepath)
+        except AssertionError:
+            continue
+
+
+if __name__ == "__main__":
+    main()
