@@ -1,20 +1,22 @@
 import os
 import re
+import json
 import requests
 from bs4 import BeautifulSoup
 from pathvalidate import sanitize_filename
 from urllib.parse import urljoin
+from parse_tululu_category import get_book_urls
 
 
-def get_soup(url, book_id):
-    book_url = f'{url}/b{book_id}/'
+def get_soup(book_url):
     response = requests.get(book_url)
     response.raise_for_status()
     assert book_url == response.url, 'Отсутствует книга на сайте'
     return BeautifulSoup(response.text, 'lxml')
 
 
-def get_book_image(url, soup):
+def get_book_image(book_url, soup):
+    url = re.findall(r'^(.*?)/b', book_url)[0]
     image_link = soup.find('div', class_='bookimage').find('img')['src']
     if image_link:
         return urljoin(url, image_link)
@@ -22,14 +24,17 @@ def get_book_image(url, soup):
 
 def get_book_atributes(soup):
     book_atributes = {
-        'name': '',
+        'title': '',
         'author': '',
-        'genres': ''
+        'img_src': '',
+        'book_path': '',
+        'comments': [],
+        'genres': []
     }
     title_tag = soup.find('div', id='content').find('h1')
     if title_tag:
         book_name, book_author = re.findall(r'^(.*?)\s::(.*)', title_tag.text)[0]
-        book_atributes['name'] = book_name.strip()
+        book_atributes['title'] = book_name.strip()
         book_atributes['author'] = book_author.strip()
 
     genre_tag = soup.find('div', id='content').find('span', class_='d_book').find_all('a')
@@ -38,8 +43,8 @@ def get_book_atributes(soup):
     return book_atributes
 
 
-def get_filename(book_atributes, book_id):
-    filename = '%s.%s.txt' % (book_id, book_atributes['name'])
+def get_filename(book_atributes):
+    filename = '%s.txt' % book_atributes['title']
     return sanitize_filename(filename)
 
 
@@ -55,7 +60,8 @@ def download_image(url, filename, folder='images/'):
     return filename
 
 
-def download_txt(url, filename, book_id, folder='books/'):
+def download_txt(book_url, filename, folder='books/'):
+    url, book_id = re.findall(r'^(.*?)/b(.*[^/])', book_url)[0]
     response = requests.get(f'{url}/txt.php', params={'id': book_id})
     response.raise_for_status()
 
@@ -75,31 +81,33 @@ def download_comments(soup):
 
 def main():
     url = 'http://tululu.org'
-    for book_id in range(1, 11):
+    books = []
+    book_urls = get_book_urls(url, 4)
+    for book_url in book_urls:
         try:
-            soup = get_soup(url, book_id)
+            soup = get_soup(book_url)
             book_atributes = get_book_atributes(soup)
 
-            filename = get_filename(book_atributes, book_id)
-            filepath = download_txt(url, filename, book_id)
+            filename = get_filename(book_atributes)
+            book_atributes['book_path'] = download_txt(book_url, filename)
 
-            url_image = get_book_image(url, soup)
+            url_image = get_book_image(book_url, soup)
             filename = url_image.split('/')[-1]
-            book_image = download_image(url_image, filename)
+            book_atributes['img_src'] = download_image(url_image, filename)
 
-            comments = download_comments(soup)
-
-            print(filepath)
-            print(book_image)
-            if comments:
-                print(comments)
-            print(book_atributes['genres'])
+            book_atributes['comments'] = download_comments(soup)
 
         except AssertionError:
             continue
 
         except AttributeError:
             continue
+
+        else:
+            books.append(book_atributes)
+
+    with open("books.json", "w", encoding='utf8') as file:
+        json.dump(books, file, ensure_ascii=False)
 
 
 if __name__ == "__main__":
