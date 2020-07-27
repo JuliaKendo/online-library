@@ -11,8 +11,8 @@ def get_soup(book_url):
     return BeautifulSoup(response.text, 'lxml')
 
 
-def get_book_atributes(soup):
-    book_atributes = {
+def get_book_attributes(soup):
+    book_attributes = {
         'title': '',
         'author': '',
         'img_src': '',
@@ -22,14 +22,19 @@ def get_book_atributes(soup):
     }
     title_tag = soup.select_one('body div[id=content] h1')
     if title_tag:
-        book_name, book_author = re.findall(r'^(.*?)\s::(.*)', title_tag.text)[0]
-        book_atributes['title'] = book_name.strip()
-        book_atributes['author'] = book_author.strip()
+        regex_object = re.compile(r'''
+                                      ^(.*?)        #группа любых символов с начала строки
+                                      \s::          #символы разделители, включая пробел
+                                      (.*)          #группа любых символов от символа разделителя до конца строки
+                                      ''', re.VERBOSE)
+        book_name, book_author = regex_object.findall(title_tag.text)[0]
+        book_attributes['title'] = book_name.strip()
+        book_attributes['author'] = book_author.strip()
 
     genre_tag = soup.select('body [id=content] span.d_book a')
-    book_atributes['genres'] = [genre.text for genre in genre_tag if genre_tag]
+    book_attributes['genres'] = [genre.text for genre in genre_tag if genre_tag]
 
-    return book_atributes
+    return book_attributes
 
 
 def get_book_image(book_url, soup):

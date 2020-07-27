@@ -22,7 +22,12 @@ def download_image(url, filename, folder='images'):
 
 
 def download_txt(book_url, filename, folder='books'):
-    url, book_id = re.findall(r'^(.*?)/b(.*[^/])', book_url)[0]
+    regex_object = re.compile(r'''
+                                  ^(.*?)        #группа любые символы с начала строки, соответствующие url
+                                  /b            #до символа /b
+                                  (.*[^/])      #группа любых символов от символа /b до /, соответствующие id
+                                  ''', re.VERBOSE)
+    url, book_id = regex_object.findall(book_url)[0]
     response = requests.get(f'{url}/txt.php', params={'id': book_id})
     response.raise_for_status()
 
@@ -58,6 +63,7 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
     logger_tools.initialize_logger(args.log)
+    logger_tools.logger.info('Начало выгрузки книг')
 
     books_folder = os.path.join(args.dest_folder, 'books')
     images_folder = os.path.join(args.dest_folder, 'images')
@@ -65,33 +71,34 @@ def main():
     for book_url in book_urls:
         try:
             soup = parse_tululu_tools.get_soup(book_url)
-            book_atributes = parse_tululu_tools.get_book_atributes(soup)
+            book_attributes = parse_tululu_tools.get_book_attributes(soup)
 
             if not args.skip_txt:
-                filename = sanitize_filename('%s.txt' % book_atributes['title'])
-                book_atributes['book_path'] = download_txt(book_url, filename, books_folder)
+                filename = sanitize_filename('%s.txt' % book_attributes['title'])
+                book_attributes['book_path'] = download_txt(book_url, filename, books_folder)
 
             if not args.skip_imgs:
                 url_image = parse_tululu_tools.get_book_image(book_url, soup)
                 filename = url_image.split('/')[-1]
-                book_atributes['img_src'] = download_image(url_image, filename, images_folder)
+                book_attributes['img_src'] = download_image(url_image, filename, images_folder)
 
-            book_atributes['comments'] = download_comments(soup)
+            book_attributes['comments'] = download_comments(soup)
 
-        except AssertionError:
-            continue
-
-        except AttributeError:
+        except (AssertionError, AttributeError, ValueError, TypeError) as error:
+            logger_tools.logger.exception(f'{error}')
             continue
 
         else:
-            books.append(book_atributes)
+            books.append(book_attributes)
 
     json_folder = os.path.join(args.dest_folder, args.json_path)
-    os.makedirs(json_folder, exist_ok=True)
+    if json_folder:
+        os.makedirs(json_folder, exist_ok=True)
     json_path = os.path.join(json_folder, 'books.json')
     with open(json_path, "w", encoding='utf8') as file:
         json.dump(books, file, ensure_ascii=False)
+
+    logger_tools.logger.info('Книги успешно выгружены')
 
 
 if __name__ == "__main__":
