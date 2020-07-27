@@ -14,7 +14,7 @@ def get_book_urls(url='http://tululu.org', max_page=None):
         elif max_page and page > max_page:
             break
         soup = BeautifulSoup(response.text, 'lxml')
-        book_tags = soup.find_all('table', class_='d_book')
+        book_tags = soup.select('[id=content] .d_book')
         for book_tag in book_tags:
-            book_ref = book_tag.find('a')['href']
+            book_ref = book_tag.select_one('a')['href']
             yield urljoin(url, book_ref)
