@@ -2,50 +2,11 @@ import os
 import re
 import json
 import requests
-from bs4 import BeautifulSoup
+import argparse
+import logger_tools
+import parse_tululu_tools
 from pathvalidate import sanitize_filename
-from urllib.parse import urljoin
 from parse_tululu_category import get_book_urls
-
-
-def get_soup(book_url):
-    response = requests.get(book_url)
-    response.raise_for_status()
-    assert book_url == response.url, 'Отсутствует книга на сайте'
-    return BeautifulSoup(response.text, 'lxml')
-
-
-def get_book_image(book_url, soup):
-    url = re.findall(r'^(.*?)/b', book_url)[0]
-    image_link = soup.select_one('.bookimage img')['src']
-    if image_link:
-        return urljoin(url, image_link)
-
-
-def get_book_atributes(soup):
-    book_atributes = {
-        'title': '',
-        'author': '',
-        'img_src': '',
-        'book_path': '',
-        'comments': [],
-        'genres': []
-    }
-    title_tag = soup.select_one('body div[id=content] h1')
-    if title_tag:
-        book_name, book_author = re.findall(r'^(.*?)\s::(.*)', title_tag.text)[0]
-        book_atributes['title'] = book_name.strip()
-        book_atributes['author'] = book_author.strip()
-
-    genre_tag = soup.select('body [id=content] span.d_book a')
-    book_atributes['genres'] = [genre.text for genre in genre_tag if genre_tag]
-
-    return book_atributes
-
-
-def get_filename(book_atributes):
-    filename = '%s.txt' % book_atributes['title']
-    return sanitize_filename(filename)
 
 
 def download_image(url, filename, folder='images/'):
@@ -78,19 +39,32 @@ def download_comments(soup):
     return [comment.text for comment in comments_tag]
 
 
+def create_parser():
+    parser = argparse.ArgumentParser(description='Параметры запуска скрипта')
+    parser.add_argument('-s', '--start_page', default=1, help='Начальная страница', type=int)
+    parser.add_argument('-e', '--end_page', default=0, help='Конечная страница', type=int)
+    parser.add_argument('-l', '--log', help='Путь к каталогу с log файлом')
+    return parser
+
+
 def main():
     url = 'http://tululu.org'
     books = []
-    book_urls = get_book_urls(url, 4)
+
+    parser = create_parser()
+    args = parser.parse_args()
+    logger_tools.initialize_logger(args.log)
+
+    book_urls = get_book_urls(url, args.start_page, args.end_page)
     for book_url in book_urls:
         try:
-            soup = get_soup(book_url)
-            book_atributes = get_book_atributes(soup)
+            soup = parse_tululu_tools.get_soup(book_url)
+            book_atributes = parse_tululu_tools.get_book_atributes(soup)
 
-            filename = get_filename(book_atributes)
+            filename = sanitize_filename('%s.txt' % book_atributes['title'])
             book_atributes['book_path'] = download_txt(book_url, filename)
 
-            url_image = get_book_image(book_url, soup)
+            url_image = parse_tululu_tools.get_book_image(book_url, soup)
             filename = url_image.split('/')[-1]
             book_atributes['img_src'] = download_image(url_image, filename)
 
