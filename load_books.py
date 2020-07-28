@@ -5,6 +5,7 @@ import requests
 import argparse
 import logger_tools
 import parse_tululu_tools
+from tqdm import tqdm
 from pathvalidate import sanitize_filename
 from parse_tululu_category import get_book_urls
 
@@ -77,7 +78,7 @@ def main():
     books_folder = os.path.join(args.dest_folder, 'books')
     images_folder = os.path.join(args.dest_folder, 'images')
     book_urls = get_book_urls(url, args.start_page, args.end_page)
-    for book_url in book_urls:
+    for book_url in tqdm(book_urls, desc="Loading", unit=" books"):
         try:
             soup = parse_tululu_tools.get_soup(book_url)
             book_attributes = parse_tululu_tools.get_book_attributes(soup)
