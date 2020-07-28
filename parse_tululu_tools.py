@@ -22,12 +22,7 @@ def get_book_attributes(soup):
     }
     title_tag = soup.select_one('body div[id=content] h1')
     if title_tag:
-        regex_object = re.compile(r'''
-                                      ^(.*?)        #группа любых символов с начала строки
-                                      \s::          #символы разделители, включая пробел
-                                      (.*)          #группа любых символов от символа разделителя до конца строки
-                                      ''', re.VERBOSE)
-        book_name, book_author = regex_object.findall(title_tag.text)[0]
+        book_name, book_author = title_tag.text.split('::')
         book_attributes['title'] = book_name.strip()
         book_attributes['author'] = book_author.strip()
 

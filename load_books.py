@@ -44,6 +44,15 @@ def download_comments(soup):
     return [comment.text for comment in comments_tag]
 
 
+def save_books_attributes(books, dest_folder, json_path):
+    json_folder = os.path.join(dest_folder, json_path)
+    if json_folder:
+        os.makedirs(json_folder, exist_ok=True)
+    json_path = os.path.join(json_folder, 'books.json')
+    with open(json_path, "w", encoding='utf8') as file:
+        json.dump(books, file, ensure_ascii=False)
+
+
 def create_parser():
     parser = argparse.ArgumentParser(description='Параметры запуска скрипта')
     parser.add_argument('-s', '--start_page', default=1, help='Начальная страница', type=int)
@@ -84,19 +93,20 @@ def main():
 
             book_attributes['comments'] = download_comments(soup)
 
-        except (AssertionError, AttributeError, ValueError, TypeError) as error:
+        except (
+            requests.exceptions.HTTPError,
+            AssertionError,
+            AttributeError,
+            ValueError, TypeError, OSError
+        ) as error:
             logger_tools.logger.exception(f'{error}')
             continue
 
         else:
             books.append(book_attributes)
 
-    json_folder = os.path.join(args.dest_folder, args.json_path)
-    if json_folder:
-        os.makedirs(json_folder, exist_ok=True)
-    json_path = os.path.join(json_folder, 'books.json')
-    with open(json_path, "w", encoding='utf8') as file:
-        json.dump(books, file, ensure_ascii=False)
+    if books:
+        save_books_attributes(books, args.dest_folder, args.json_path)
 
     logger_tools.logger.info('Книги успешно выгружены')
 
