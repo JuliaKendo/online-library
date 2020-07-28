@@ -125,4 +125,7 @@ dmypy.json
 .pyre/
 
 # Additional
-*.txt
+images/
+books/
+log.txt
+*.json
