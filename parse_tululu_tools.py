@@ -4,10 +4,14 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
 
+def raise_for_status(url, response):
+    if not response.raise_for_status():
+        assert url == response.url, 'Отсутствует книга на сайте'
+
+
 def get_soup(book_url):
     response = requests.get(book_url)
-    response.raise_for_status()
-    assert book_url == response.url, 'Отсутствует книга на сайте'
+    raise_for_status(book_url, response)
     return BeautifulSoup(response.text, 'lxml')
 
 

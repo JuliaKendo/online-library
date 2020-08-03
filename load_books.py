@@ -1,19 +1,23 @@
 import os
 import re
 import json
+import logging
 import requests
 import argparse
-import logger_tools
 import parse_tululu_tools
 from tqdm import tqdm
+from urllib import parse
+from logger_tools import initialize_logger
 from pathvalidate import sanitize_filename
+from parse_tululu_tools import raise_for_status
 from parse_tululu_category import get_book_urls
+
+logger = logging.getLogger('parsing')
 
 
 def download_image(url, filename, folder='images'):
     response = requests.get(url)
-    response.raise_for_status()
-
+    raise_for_status(url, response)
     os.makedirs(folder, exist_ok=True)
     filename = os.path.join(folder, filename)
     with open(filename, 'wb') as file:
@@ -29,8 +33,9 @@ def download_txt(book_url, filename, folder='books'):
                                   (.*[^/])      #группа любых символов от символа /b до /, соответствующие id
                                   ''', re.VERBOSE)
     url, book_id = regex_object.findall(book_url)[0]
-    response = requests.get(f'{url}/txt.php', params={'id': book_id})
-    response.raise_for_status()
+    url = f'{url}/txt.php?' + parse.urlencode({'id': book_id})
+    response = requests.get(url)
+    raise_for_status(url, response)
 
     os.makedirs(folder, exist_ok=True)
     filename = os.path.join(folder, filename)
@@ -72,44 +77,48 @@ def main():
 
     parser = create_parser()
     args = parser.parse_args()
-    logger_tools.initialize_logger(args.log)
-    logger_tools.logger.info('Начало выгрузки книг')
+    initialize_logger(args.log)
+    logger.info('Начало выгрузки книг')
 
     books_folder = os.path.join(args.dest_folder, 'books')
     images_folder = os.path.join(args.dest_folder, 'images')
-    book_urls = get_book_urls(url, args.start_page, args.end_page)
-    for book_url in tqdm(book_urls, desc="Loading", unit=" books"):
-        try:
-            soup = parse_tululu_tools.get_soup(book_url)
-            book_attributes = parse_tululu_tools.get_book_attributes(soup)
+    try:
+        book_urls = get_book_urls(url, args.start_page, args.end_page)
+        for book_url in tqdm(book_urls, desc="Loading", unit=" books"):
+            try:
+                soup = parse_tululu_tools.get_soup(book_url)
+                book_attributes = parse_tululu_tools.get_book_attributes(soup)
 
-            if not args.skip_txt:
-                filename = sanitize_filename('%s.txt' % book_attributes['title'])
-                book_attributes['book_path'] = download_txt(book_url, filename, books_folder)
+                if not args.skip_txt:
+                    filename = sanitize_filename('%s.txt' % book_attributes['title'])
+                    book_attributes['book_path'] = download_txt(book_url, filename, books_folder)
 
-            if not args.skip_imgs:
-                url_image = parse_tululu_tools.get_book_image(book_url, soup)
-                filename = url_image.split('/')[-1]
-                book_attributes['img_src'] = download_image(url_image, filename, images_folder)
+                if not args.skip_imgs:
+                    url_image = parse_tululu_tools.get_book_image(book_url, soup)
+                    filename = url_image.split('/')[-1]
+                    book_attributes['img_src'] = download_image(url_image, filename, images_folder)
 
-            book_attributes['comments'] = download_comments(soup)
+                book_attributes['comments'] = download_comments(soup)
 
-        except (
-            requests.exceptions.HTTPError,
-            AssertionError,
-            AttributeError,
-            ValueError, TypeError, OSError
-        ) as error:
-            logger_tools.logger.exception(f'{error}')
-            continue
+            except (
+                requests.exceptions.HTTPError,
+                AssertionError,
+                AttributeError,
+                ValueError, TypeError, OSError
+            ) as error:
+                logger.exception(f'{error}')
+                continue
 
-        else:
-            books.append(book_attributes)
+            else:
+                books.append(book_attributes)
+
+    except requests.exceptions.HTTPError as error:
+        raise SystemExit('%s' % error)
 
     if books:
         save_books_attributes(books, args.dest_folder, args.json_path)
 
-    logger_tools.logger.info('Книги успешно выгружены')
+    logger.info('Книги успешно выгружены')
 
 
 if __name__ == "__main__":
