@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import logging
 import requests
 import argparse
@@ -17,7 +18,7 @@ logger = logging.getLogger('parsing')
 
 def download_image(url, filename, folder='images'):
     response = requests.get(url)
-    raise_for_status(url, response)
+    raise_for_status(url, response, 'Отсутствует обложка книги на сайте')
     os.makedirs(folder, exist_ok=True)
     filename = os.path.join(folder, filename)
     with open(filename, 'wb') as file:
@@ -35,7 +36,7 @@ def download_txt(book_url, filename, folder='books'):
     url, book_id = regex_object.findall(book_url)[0]
     url = f'{url}/txt.php?' + parse.urlencode({'id': book_id})
     response = requests.get(url)
-    raise_for_status(url, response)
+    raise_for_status(url, response, 'Отсутствует книга на сайте')
 
     os.makedirs(folder, exist_ok=True)
     filename = os.path.join(folder, filename)
@@ -74,7 +75,6 @@ def create_parser():
 def main():
     url = 'http://tululu.org'
     books = []
-
     parser = create_parser()
     args = parser.parse_args()
     initialize_logger(args.log)
@@ -82,38 +82,49 @@ def main():
 
     books_folder = os.path.join(args.dest_folder, 'books')
     images_folder = os.path.join(args.dest_folder, 'images')
-    try:
-        book_urls = get_book_urls(url, args.start_page, args.end_page)
-        for book_url in tqdm(book_urls, desc="Loading", unit=" books"):
-            try:
-                soup = parse_tululu_tools.get_soup(book_url)
-                book_attributes = parse_tululu_tools.get_book_attributes(soup)
+    connection_errors = 0
+    while True:
+        try:
+            book_urls = get_book_urls(url, args.start_page, args.end_page)
+            for book_url in tqdm(book_urls, desc="Loading", unit=" books"):
+                try:
+                    soup = parse_tululu_tools.get_soup(book_url)
+                    book_attributes = parse_tululu_tools.get_book_attributes(soup)
 
-                if not args.skip_txt:
-                    filename = sanitize_filename('%s.txt' % book_attributes['title'])
-                    book_attributes['book_path'] = download_txt(book_url, filename, books_folder)
+                    if not args.skip_txt:
+                        filename = sanitize_filename('%s.txt' % book_attributes['title'])
+                        book_attributes['book_path'] = download_txt(book_url, filename, books_folder)
 
-                if not args.skip_imgs:
-                    url_image = parse_tululu_tools.get_book_image(book_url, soup)
-                    filename = url_image.split('/')[-1]
-                    book_attributes['img_src'] = download_image(url_image, filename, images_folder)
+                    if not args.skip_imgs:
+                        url_image = parse_tululu_tools.get_book_image(book_url, soup)
+                        filename = url_image.split('/')[-1]
+                        book_attributes['img_src'] = download_image(url_image, filename, images_folder)
 
-                book_attributes['comments'] = download_comments(soup)
+                    book_attributes['comments'] = download_comments(soup)
 
-            except (
-                requests.exceptions.HTTPError,
-                AssertionError,
-                AttributeError,
-                ValueError, TypeError, OSError
-            ) as error:
-                logger.exception(f'{error}')
-                continue
+                except (
+                    requests.exceptions.HTTPError,
+                    AssertionError,
+                    AttributeError,
+                    ValueError, TypeError, OSError
+                ) as error:
+                    logger.exception(f'{error}')
+                    continue
 
-            else:
-                books.append(book_attributes)
+                else:
+                    connection_errors = 0
+                    books.append(book_attributes)
 
-    except requests.exceptions.HTTPError as error:
-        raise SystemExit('%s' % error)
+        except requests.exceptions.ConnectionError:
+            connection_errors += 1
+            time.sleep(1 if connection_errors < 3 else 300)
+            continue
+
+        except requests.exceptions.HTTPError as error:
+            raise SystemExit('%s' % error)
+
+        else:
+            break
 
     if books:
         save_books_attributes(books, args.dest_folder, args.json_path)

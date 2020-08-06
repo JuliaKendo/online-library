@@ -1,17 +1,19 @@
 import re
 import requests
+from requests.exceptions import HTTPError
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
 
-def raise_for_status(url, response):
-    if not response.raise_for_status():
-        assert url == response.url, 'Отсутствует книга на сайте'
+def raise_for_status(url, response, error_description):
+    response.raise_for_status()
+    if url != response.url:
+        raise HTTPError(error_description)
 
 
 def get_soup(book_url):
     response = requests.get(book_url)
-    raise_for_status(book_url, response)
+    raise_for_status(book_url, response, 'Отсутствует книга на сайте')
     return BeautifulSoup(response.text, 'lxml')
 
 
