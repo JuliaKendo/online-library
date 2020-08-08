@@ -60,6 +60,33 @@ def save_books_attributes(books, dest_folder, json_path):
         json.dump(books, file, ensure_ascii=False)
 
 
+def load_book(book_url, **kwargs):
+    soup = parse_tululu_tools.get_soup(book_url)
+    book_attributes = parse_tululu_tools.get_book_attributes(soup)
+
+    if not kwargs['skip_txt']:
+        filename = sanitize_filename('%s.txt' % book_attributes['title'])
+        book_attributes['book_path'] = download_txt(book_url, filename, kwargs['books_folder'])
+
+    if not kwargs['skip_imgs']:
+        url_image = parse_tululu_tools.get_book_image(book_url, soup)
+        filename = url_image.split('/')[-1]
+        book_attributes['img_src'] = download_image(url_image, filename, kwargs['images_folder'])
+
+    book_attributes['comments'] = download_comments(soup)
+
+    return book_attributes
+
+
+def next_step(book_urls, pbar):
+    try:
+        book_url = next(book_urls)
+        pbar.update(1)
+        return book_url
+    except StopIteration:
+        return None
+
+
 def create_parser():
     parser = argparse.ArgumentParser(description='Параметры запуска скрипта')
     parser.add_argument('-s', '--start_page', default=1, help='Начальная страница', type=int)
@@ -82,37 +109,38 @@ def main():
 
     books_folder = os.path.join(args.dest_folder, 'books')
     images_folder = os.path.join(args.dest_folder, 'images')
+    pbar = tqdm(desc="Loading", unit=" books")
     connection_errors = 0
     while True:
         try:
             book_urls = get_book_urls(url, args.start_page, args.end_page)
-            for book_url in tqdm(book_urls, desc="Loading", unit=" books"):
+            book_url = next(book_urls)
+            while book_url:
                 try:
-                    soup = parse_tululu_tools.get_soup(book_url)
-                    book_attributes = parse_tululu_tools.get_book_attributes(soup)
+                    book_attributes = load_book(
+                        book_url,
+                        books_folder=books_folder,
+                        images_folder=images_folder,
+                        skip_txt=args.skip_txt,
+                        skip_imgs=args.skip_imgs
+                    )
 
-                    if not args.skip_txt:
-                        filename = sanitize_filename('%s.txt' % book_attributes['title'])
-                        book_attributes['book_path'] = download_txt(book_url, filename, books_folder)
-
-                    if not args.skip_imgs:
-                        url_image = parse_tululu_tools.get_book_image(book_url, soup)
-                        filename = url_image.split('/')[-1]
-                        book_attributes['img_src'] = download_image(url_image, filename, images_folder)
-
-                    book_attributes['comments'] = download_comments(soup)
+                except requests.exceptions.ConnectionError:
+                    connection_errors += 1
+                    time.sleep(1 if connection_errors < 3 else 300)
+                    continue
 
                 except (
                     requests.exceptions.HTTPError,
-                    AssertionError,
-                    AttributeError,
-                    ValueError, TypeError, OSError
+                    AttributeError, ValueError, TypeError, OSError
                 ) as error:
+                    book_url = next_step(book_urls, pbar)
                     logger.exception(f'{error}')
                     continue
 
                 else:
                     connection_errors = 0
+                    book_url = next_step(book_urls, pbar)
                     books.append(book_attributes)
 
         except requests.exceptions.ConnectionError:

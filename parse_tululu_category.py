@@ -14,6 +14,4 @@ def get_book_urls(url, min_page=1, max_page=0):
             break
         soup = BeautifulSoup(response.text, 'lxml')
         book_tags = soup.select('[id=content] .d_book')
-        for book_tag in book_tags:
-            book_ref = book_tag.select_one('a')['href']
-            yield urljoin(url, book_ref)
+        yield from [urljoin(url, book_tag.select_one('a')['href']) for book_tag in book_tags]
